@@ -17,11 +17,12 @@ services:
   feed:                         # hot path
     build: { context: ., dockerfile: Containerfile }
     image: localhost/ipc_poc:latest
+    platform: linux/amd64
     command: ["feed"]
     network_mode: none          # 完全沒有網絡：攻擊面最小，亦證明資料只經 shm 傳出
     environment:
       RING_PATH: /ring/md
-      GAP_NS: "2000"
+      GAP_NS: "100000"
     volumes:
       - ring:/ring
     read_only: true             # root filesystem 唯讀，只有 /ring 可寫
@@ -34,6 +35,7 @@ services:
   sink:                         # cold path：ring → QuestDB
     image: localhost/ipc_poc:latest
     command: ["sink"]
+    platform: linux/amd64
     depends_on: [questdb, feed]
     environment:
       RING_PATH: /ring/md
