@@ -1,0 +1,56 @@
+# podman compose up --build
+# 先建立 .env（不要 commit，加進 .gitignore）：
+#   QDB_PG_PASSWORD=<一個強密碼>
+services:
+  questdb:
+    image: docker.io/questdb/questdb:latest
+    ports:
+      - "127.0.0.1:9000:9000"   # web console 只綁 localhost，同一 Wi-Fi 的人連不到
+      # 9009（ILP）和 8812（PG wire）不對外開放：sink 經內部網絡連入即可
+    environment:
+      QDB_PG_USER: admin
+      QDB_PG_PASSWORD: ${QDB_PG_PASSWORD:?set QDB_PG_PASSWORD in .env}   # 不寫死在檔案裡
+    volumes:
+      - qdb-data:/var/lib/questdb
+    security_opt: ["no-new-privileges:true"]
+
+  feed:                         # hot path
+    build: { context: ., dockerfile: Containerfile }
+    image: localhost/ipc_poc:latest
+    command: ["feed"]
+    network_mode: none          # 完全沒有網絡：攻擊面最小，亦證明資料只經 shm 傳出
+    environment:
+      RING_PATH: /ring/md
+      GAP_NS: "2000"
+    volumes:
+      - ring:/ring
+    read_only: true             # root filesystem 唯讀，只有 /ring 可寫
+    cap_drop: [ALL]             # 不需要任何 Linux capability（mlock 靠 ulimit 而不是 CAP_IPC_LOCK）
+    security_opt: ["no-new-privileges:true"]
+    ulimits:
+      memlock: { soft: -1, hard: -1 }   # rootless 下不能超過 user 本身上限，見說明
+    # cpuset: "2"               # 實機上 pin 到 isolated core（rootless 需 cgroup cpuset 委派）
+
+  sink:                         # cold path：ring → QuestDB
+    image: localhost/ipc_poc:latest
+    command: ["sink"]
+    depends_on: [questdb, feed]
+    environment:
+      RING_PATH: /ring/md
+      QDB_ADDR: questdb:9009
+    volumes:
+      - ring:/ring
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+
+volumes:
+  ring:                         # tmpfs：兩個 container mmap 同一檔案 = 同一批 physical frame
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=64m,uid=10001,gid=10001,mode=0700"   # 只有 app user（UID 10001）可讀寫
+  qdb-data:
