@@ -22,7 +22,7 @@ services:
     network_mode: none          # 完全沒有網絡：攻擊面最小，亦證明資料只經 shm 傳出
     environment:
       RING_PATH: /ring/md
-      GAP_NS: "2000"
+      GAP_NS: "100000"
     volumes:
       - ring:/ring
     read_only: true             # root filesystem 唯讀，只有 /ring 可寫
