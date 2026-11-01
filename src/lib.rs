@@ -93,6 +93,11 @@ impl Ring {
         if producer && f.metadata().unwrap().len() != size as u64 {
             f.set_len(size as u64).unwrap();
         }
+        // consumer 必須等 producer set_len 完成才 mmap：
+        // 檔案長度不足時，存取超出 EOF 的 page 會觸發無法處理的 page fault → SIGBUS
+        while !producer && f.metadata().unwrap().len() < size as u64 {
+            thread::sleep(Duration::from_millis(100));
+        }
         let p = unsafe {
             libc::mmap(
                 std::ptr::null_mut(),
